@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2015-2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.stream.scaladsl
@@ -195,7 +195,7 @@ private final class RestartWithBackoffSource[T](
 
       override protected def startGraph() = {
         val sinkIn = createSubInlet(out)
-        sourceFactory().runWith(sinkIn.sink)(subFusingMaterializer)
+        subFusingMaterializer.materialize(sourceFactory().to(sinkIn.sink), inheritedAttributes)
         if (isAvailable(out)) {
           sinkIn.pull()
         }

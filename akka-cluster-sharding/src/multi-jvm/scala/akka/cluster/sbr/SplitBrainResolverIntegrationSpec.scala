@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2015-2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.cluster.sbr
@@ -396,6 +396,7 @@ class SplitBrainResolverIntegrationSpec
         lease-majority {
           lease-implementation = test-lease
           acquire-lease-delay-for-minority = 3s
+          release-after = 20s          
         }
       }
       test-lease {

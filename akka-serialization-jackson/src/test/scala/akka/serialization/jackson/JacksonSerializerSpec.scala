@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2016-2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.serialization.jackson
@@ -40,7 +40,7 @@ import com.fasterxml.jackson.databind.exc.InvalidTypeIdException
 import com.fasterxml.jackson.databind.json.JsonMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.scala.JsonScalaEnumeration
-import com.github.ghik.silencer.silent
+import scala.annotation.nowarn
 import com.typesafe.config.ConfigFactory
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.matchers.should.Matchers
@@ -164,7 +164,7 @@ class JacksonCborSerializerSpec extends JacksonSerializerSpec("jackson-cbor") {
   }
 }
 
-@silent // this test uses Jackson deprecated APIs
+@nowarn // this test uses Jackson deprecated APIs
 class JacksonJsonSerializerSpec extends JacksonSerializerSpec("jackson-json") {
 
   def serializeToJsonString(obj: AnyRef, sys: ActorSystem = system): String = {
@@ -411,6 +411,46 @@ class JacksonJsonSerializerSpec extends JacksonSerializerSpec("jackson-json") {
     "be possible to create custom ObjectMapper" in {
       pending
     }
+
+    "be possible to tune the visibility at ObjectMapper level (FIELD, PUBLIC_ONLY)" in {
+      withSystem("""
+        akka.actor {
+          serialization-bindings {
+            "akka.serialization.jackson.JavaTestMessages$ClassWithVisibility" = jackson-json
+          }
+        }
+        akka.serialization.jackson.visibility {
+          FIELD = PUBLIC_ONLY
+        }
+        """) { sys =>
+        val msg = new ClassWithVisibility();
+        val json = serializeToJsonString(msg, sys)
+        val expected = """{"publicField":"1234"}"""
+        json should ===(expected)
+      }
+    }
+
+    // This test ensures the default behavior in Akka 2.6 series
+    // (that is "FIELD = ANY") stays consistent
+    "be possible to tune the visibility at ObjectMapper level (Akka default)" in {
+      withSystem("""
+        akka.actor {
+          serialization-bindings {
+            "akka.serialization.jackson.JavaTestMessages$ClassWithVisibility" = jackson-json
+          }
+        }
+        akka.serialization.jackson.visibility {
+          ## No overrides
+        }
+        """) { sys =>
+        val msg = new ClassWithVisibility();
+        val json = serializeToJsonString(msg, sys)
+        val expected =
+          """{"publicField":"1234","defaultField":"abcd","protectedField":"vwxyz","privateField":"ABCD"}""".stripMargin
+        json should ===(expected)
+      }
+    }
+
   }
 
   "JacksonJsonSerializer with Scala message classes" must {

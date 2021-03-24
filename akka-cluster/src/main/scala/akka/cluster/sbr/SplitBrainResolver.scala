@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.cluster.sbr
@@ -30,6 +30,7 @@ import akka.cluster.sbr.DowningStrategy.Decision
 import akka.event.DiagnosticMarkerBusLoggingAdapter
 import akka.event.Logging
 import akka.pattern.pipe
+import akka.remote.artery.ThisActorSystemQuarantinedEvent
 
 /**
  * INTERNAL API
@@ -111,10 +112,13 @@ import akka.pattern.pipe
   // re-subscribe when restart
   override def preStart(): Unit = {
     cluster.subscribe(self, ClusterEvent.InitialStateAsEvents, classOf[ClusterDomainEvent])
+    // note that this is artery only
+    context.system.eventStream.subscribe(self, classOf[ThisActorSystemQuarantinedEvent])
     super.preStart()
   }
   override def postStop(): Unit = {
     cluster.unsubscribe(self)
+    context.system.eventStream.unsubscribe(self, classOf[ThisActorSystemQuarantinedEvent])
     super.postStop()
   }
 
@@ -158,7 +162,11 @@ import akka.pattern.pipe
   def downAllWhenUnstable: FiniteDuration =
     settings.DownAllWhenUnstable
 
-  private val releaseLeaseAfter = stableAfter * 2
+  private def releaseLeaseAfter: FiniteDuration = strategy match {
+    case lm: LeaseMajority => lm.releaseAfter
+    case other =>
+      throw new IllegalStateException(s"Unexpected use of releaseLeaseAfter for strategy [${other.getClass.getName}]")
+  }
 
   def tickInterval: FiniteDuration = 1.second
 
@@ -261,23 +269,24 @@ import akka.pattern.pipe
   }
 
   def receive: Receive = {
-    case SeenChanged(_, seenBy)       => seenChanged(seenBy)
-    case MemberJoined(m)              => addJoining(m)
-    case MemberWeaklyUp(m)            => addWeaklyUp(m)
-    case MemberUp(m)                  => addUp(m)
-    case MemberLeft(m)                => leaving(m)
-    case UnreachableMember(m)         => unreachableMember(m)
-    case MemberDowned(m)              => unreachableMember(m)
-    case MemberExited(m)              => unreachableMember(m)
-    case ReachableMember(m)           => reachableMember(m)
-    case ReachabilityChanged(r)       => reachabilityChanged(r)
-    case MemberRemoved(m, _)          => remove(m)
-    case UnreachableDataCenter(dc)    => unreachableDataCenter(dc)
-    case ReachableDataCenter(dc)      => reachableDataCenter(dc)
-    case LeaderChanged(leaderOption)  => leaderChanged(leaderOption)
-    case ReleaseLeaseResult(released) => releaseLeaseResult(released)
-    case Tick                         => tick()
-    case _: ClusterDomainEvent        => // not interested in other events
+    case SeenChanged(_, seenBy)                     => seenChanged(seenBy)
+    case MemberJoined(m)                            => addJoining(m)
+    case MemberWeaklyUp(m)                          => addWeaklyUp(m)
+    case MemberUp(m)                                => addUp(m)
+    case MemberLeft(m)                              => leaving(m)
+    case MemberExited(m)                            => exited(m)
+    case UnreachableMember(m)                       => unreachableMember(m)
+    case MemberDowned(m)                            => unreachableMember(m)
+    case ReachableMember(m)                         => reachableMember(m)
+    case ReachabilityChanged(r)                     => reachabilityChanged(r)
+    case MemberRemoved(m, _)                        => remove(m)
+    case UnreachableDataCenter(dc)                  => unreachableDataCenter(dc)
+    case ReachableDataCenter(dc)                    => reachableDataCenter(dc)
+    case LeaderChanged(leaderOption)                => leaderChanged(leaderOption)
+    case ReleaseLeaseResult(released)               => releaseLeaseResult(released)
+    case Tick                                       => tick()
+    case ThisActorSystemQuarantinedEvent(_, remote) => thisActorSystemWasQuarantined(remote)
+    case _: ClusterDomainEvent                      => // not interested in other events
   }
 
   private def leaderChanged(leaderOption: Option[Address]): Unit = {
@@ -343,6 +352,15 @@ import akka.pattern.pipe
           releaseLease() // reply message is ReleaseLeaseResult, which will update the releaseLeaseCondition
       case _ =>
       // no lease or first waiting for downed nodes to be removed
+    }
+  }
+
+  private def thisActorSystemWasQuarantined(remoteUnique: akka.remote.UniqueAddress): Unit = {
+    val remote = UniqueAddress(remoteUnique.address, remoteUnique.uid)
+    if (Cluster(context.system).state.members.exists(m => m.uniqueAddress == remote)) {
+      actOnDecision(DowningStrategy.DownSelfQuarantinedByRemote)
+    } else {
+      log.debug("Remote [{}] quarantined this system but is not part of cluster, ignoring", remote)
     }
   }
 
@@ -460,7 +478,7 @@ import akka.pattern.pipe
       else ""}, " +
       s"[${strategy.unreachable.size}] unreachable of [${strategy.members.size}] members" +
       indirectlyConnectedLogMessage +
-      s", all members in DC [${strategy.allMembersInDC.mkString(", ")}], full reachability status: ${strategy.reachability}" +
+      s", all members in DC [${strategy.allMembersInDC.mkString(", ")}], full reachability status: [${strategy.reachability}]" +
       unreachableDataCentersLogMessage)
   }
 
@@ -552,6 +570,15 @@ import akka.pattern.pipe
     if (selfDc == m.dataCenter) {
       log.debug("SBR leaving [{}]", m)
       mutateMemberInfo(resetStable = false) { () =>
+        strategy.add(m)
+      }
+    }
+  }
+
+  def exited(m: Member): Unit = {
+    if (selfDc == m.dataCenter) {
+      log.debug("SBR exited [{}]", m)
+      mutateMemberInfo(resetStable = true) { () =>
         strategy.add(m)
       }
     }

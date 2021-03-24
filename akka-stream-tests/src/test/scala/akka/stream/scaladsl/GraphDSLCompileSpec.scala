@@ -1,10 +1,10 @@
 /*
- * Copyright (C) 2014-2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2014-2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.stream.scaladsl
 
-import com.github.ghik.silencer.silent
+import scala.annotation.nowarn
 
 import akka.NotUsed
 import akka.stream._
@@ -17,7 +17,7 @@ object GraphDSLCompileSpec {
   class Apple extends Fruit
 }
 
-@silent // tests deprecated APIs
+@nowarn // tests deprecated APIs
 class GraphDSLCompileSpec extends StreamSpec {
   import GraphDSLCompileSpec._
 
@@ -317,10 +317,10 @@ class GraphDSLCompileSpec extends StreamSpec {
 
     "build with implicits and variance" in {
       RunnableGraph.fromGraph(GraphDSL.create() { implicit b =>
-        def appleSource = b.add(Source.fromPublisher(TestPublisher.manualProbe[Apple]()))
-        def fruitSource = b.add(Source.fromPublisher(TestPublisher.manualProbe[Fruit]()))
-        val outA = b.add(Sink.fromSubscriber(TestSubscriber.manualProbe[Fruit]()))
-        val outB = b.add(Sink.fromSubscriber(TestSubscriber.manualProbe[Fruit]()))
+        def appleSource = b.add(Source.fromPublisher(TestPublisher.ManualProbe[Apple]()))
+        def fruitSource = b.add(Source.fromPublisher(TestPublisher.ManualProbe[Fruit]()))
+        val outA = b.add(Sink.fromSubscriber(TestSubscriber.ManualProbe[Fruit]()))
+        val outB = b.add(Sink.fromSubscriber(TestSubscriber.ManualProbe[Fruit]()))
         val merge = b.add(Merge[Fruit](11))
         val unzip = b.add(Unzip[Int, String]())
         val whatever = b.add(Sink.asPublisher[Any](false))

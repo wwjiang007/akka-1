@@ -1,37 +1,36 @@
 /*
- * Copyright (C) 2009-2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.stream.impl.fusing
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
+import akka.actor.{ ActorRef, Terminated }
+import akka.annotation.{ DoNotInherit, InternalApi }
+import akka.event.Logging.LogLevel
+import akka.event._
+import akka.stream.ActorAttributes.SupervisionStrategy
+import akka.stream.Attributes.SourceLocation
+import akka.stream.Attributes.{ InputBuffer, LogLevels }
+import akka.stream.OverflowStrategies._
+import akka.stream.impl.Stages.DefaultAttributes
+import akka.stream.impl.fusing.GraphStages.SimpleLinearGraphStage
+import akka.stream.impl.{ ReactiveStreamsCompliance, Buffer => BufferImpl }
+import akka.stream.scaladsl.{ DelayStrategy, Source }
+import akka.stream.stage._
+import akka.stream.{ Supervision, _ }
+import akka.util.{ unused, OptionVal }
+import scala.annotation.nowarn
 
 import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.collection.immutable.VectorBuilder
 import scala.concurrent.Future
 import scala.concurrent.duration.{ FiniteDuration, _ }
-import scala.util.{ Failure, Success, Try }
-import scala.util.control.{ NoStackTrace, NonFatal }
 import scala.util.control.Exception.Catcher
-
-import com.github.ghik.silencer.silent
-
-import akka.actor.{ ActorRef, Terminated }
-import akka.annotation.{ DoNotInherit, InternalApi }
-import akka.event.{ LogMarker, LogSource, Logging, LoggingAdapter, MarkerLoggingAdapter }
-import akka.event.Logging.LogLevel
-import akka.stream.{ Supervision, _ }
-import akka.stream.ActorAttributes.SupervisionStrategy
-import akka.stream.Attributes.{ InputBuffer, LogLevels }
-import akka.stream.OverflowStrategies._
-import akka.stream.impl.{ ReactiveStreamsCompliance, Buffer => BufferImpl }
-import akka.stream.impl.Stages.DefaultAttributes
-import akka.stream.impl.fusing.GraphStages.SimpleLinearGraphStage
-import akka.stream.scaladsl.{ DelayStrategy, Source }
-import akka.stream.stage._
-import akka.util.OptionVal
-import akka.util.unused
+import scala.util.control.{ NoStackTrace, NonFatal }
+import scala.util.{ Failure, Success, Try }
+import akka.util.ccompat._
 
 /**
  * INTERNAL API
@@ -41,7 +40,7 @@ import akka.util.unused
   val out = Outlet[Out]("Map.out")
   override val shape = FlowShape(in, out)
 
-  override def initialAttributes: Attributes = DefaultAttributes.map
+  override def initialAttributes: Attributes = DefaultAttributes.map and SourceLocation.forLambda(f)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler {
@@ -70,7 +69,7 @@ import akka.util.unused
  * INTERNAL API
  */
 @InternalApi private[akka] final case class Filter[T](p: T => Boolean) extends SimpleLinearGraphStage[T] {
-  override def initialAttributes: Attributes = DefaultAttributes.filter
+  override def initialAttributes: Attributes = DefaultAttributes.filter and SourceLocation.forLambda(p)
 
   override def toString: String = "Filter"
 
@@ -122,7 +121,7 @@ import akka.util.unused
  */
 @InternalApi private[akka] final case class TakeWhile[T](p: T => Boolean, inclusive: Boolean = false)
     extends SimpleLinearGraphStage[T] {
-  override def initialAttributes: Attributes = DefaultAttributes.takeWhile
+  override def initialAttributes: Attributes = DefaultAttributes.takeWhile and SourceLocation.forLambda(p)
 
   override def toString: String = "TakeWhile"
 
@@ -160,7 +159,7 @@ import akka.util.unused
  * INTERNAL API
  */
 @InternalApi private[akka] final case class DropWhile[T](p: T => Boolean) extends SimpleLinearGraphStage[T] {
-  override def initialAttributes: Attributes = DefaultAttributes.dropWhile
+  override def initialAttributes: Attributes = DefaultAttributes.dropWhile and SourceLocation.forLambda(p)
 
   def createLogic(inheritedAttributes: Attributes) =
     new SupervisedGraphStageLogic(inheritedAttributes, shape) with InHandler with OutHandler {
@@ -232,7 +231,7 @@ private[stream] object Collect {
   val out = Outlet[Out]("Collect.out")
   override val shape = FlowShape(in, out)
 
-  override def initialAttributes: Attributes = DefaultAttributes.collect
+  override def initialAttributes: Attributes = DefaultAttributes.collect and SourceLocation.forLambda(pf)
 
   def createLogic(inheritedAttributes: Attributes) =
     new SupervisedGraphStageLogic(inheritedAttributes, shape) with InHandler with OutHandler {
@@ -265,7 +264,7 @@ private[stream] object Collect {
  */
 @InternalApi private[akka] final case class Recover[T](pf: PartialFunction[Throwable, T])
     extends SimpleLinearGraphStage[T] {
-  override protected def initialAttributes: Attributes = DefaultAttributes.recover
+  override protected def initialAttributes: Attributes = DefaultAttributes.recover and SourceLocation.forLambda(pf)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler {
@@ -316,6 +315,9 @@ private[stream] object Collect {
  */
 @InternalApi private[akka] final case class MapError[T](f: PartialFunction[Throwable, Throwable])
     extends SimpleLinearGraphStage[T] {
+
+  override protected def initialAttributes: Attributes = DefaultAttributes.mapError
+
   override def createLogic(attr: Attributes) =
     new GraphStageLogic(shape) with InHandler with OutHandler {
       override def onPush(): Unit = push(out, grab(in))
@@ -391,7 +393,7 @@ private[stream] object Collect {
     extends GraphStage[FlowShape[In, Out]] {
   override val shape = FlowShape[In, Out](Inlet("Scan.in"), Outlet("Scan.out"))
 
-  override def initialAttributes: Attributes = DefaultAttributes.scan
+  override def initialAttributes: Attributes = DefaultAttributes.scan and SourceLocation.forLambda(f)
 
   override def toString: String = "Scan"
 
@@ -458,7 +460,7 @@ private[stream] object Collect {
   val out = Outlet[Out]("ScanAsync.out")
   override val shape: FlowShape[In, Out] = FlowShape[In, Out](in, out)
 
-  override val initialAttributes: Attributes = Attributes.name("scanAsync")
+  override val initialAttributes: Attributes = Attributes.name("scanAsync") and SourceLocation.forLambda(f)
 
   override val toString: String = "ScanAsync"
 
@@ -577,7 +579,7 @@ private[stream] object Collect {
 
   override def toString: String = "Fold"
 
-  override val initialAttributes = DefaultAttributes.fold
+  override val initialAttributes = DefaultAttributes.fold and SourceLocation.forLambda(f)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler {
@@ -636,7 +638,7 @@ private[stream] object Collect {
 
   override def toString: String = "FoldAsync"
 
-  override val initialAttributes = DefaultAttributes.foldAsync
+  override val initialAttributes = DefaultAttributes.foldAsync and SourceLocation.forLambda(f)
 
   def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler {
@@ -760,34 +762,37 @@ private[stream] object Collect {
 /**
  * INTERNAL API
  */
-@InternalApi private[akka] final case class Grouped[T](n: Int) extends GraphStage[FlowShape[T, immutable.Seq[T]]] {
-  require(n > 0, "n must be greater than 0")
+@InternalApi private[akka] final case class GroupedWeighted[T](minWeight: Long, costFn: T => Long)
+    extends GraphStage[FlowShape[T, immutable.Seq[T]]] {
+  require(minWeight > 0, "minWeight must be greater than 0")
 
-  val in = Inlet[T]("Grouped.in")
-  val out = Outlet[immutable.Seq[T]]("Grouped.out")
+  val in = Inlet[T]("GroupedWeighted.in")
+  val out = Outlet[immutable.Seq[T]]("GroupedWeighted.out")
   override val shape: FlowShape[T, immutable.Seq[T]] = FlowShape(in, out)
 
-  override protected val initialAttributes: Attributes = DefaultAttributes.grouped
+  override def initialAttributes: Attributes = DefaultAttributes.groupedWeighted
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler {
-      private val buf = {
-        val b = Vector.newBuilder[T]
-        b.sizeHint(n)
-        b
-      }
-      var left = n
+      private val buf = Vector.newBuilder[T]
+      var left: Long = minWeight
 
       override def onPush(): Unit = {
-        buf += grab(in)
-        left -= 1
-        if (left == 0) {
-          val elements = buf.result()
-          buf.clear()
-          left = n
-          push(out, elements)
-        } else {
-          pull(in)
+        val elem = grab(in)
+        val cost = costFn(elem)
+        if (cost < 0L)
+          failStage(new IllegalArgumentException(s"Negative weight [$cost] for element [$elem] is not allowed"))
+        else {
+          buf += elem
+          left -= cost
+          if (left <= 0) {
+            val elements = buf.result()
+            buf.clear()
+            left = minWeight
+            push(out, elements)
+          } else {
+            pull(in)
+          }
         }
       }
 
@@ -796,12 +801,11 @@ private[stream] object Collect {
       }
 
       override def onUpstreamFinish(): Unit = {
-        // This means the buf is filled with some elements but not enough (left < n) to group together.
-        // Since the upstream has finished we have to push them to downstream though.
-        if (left < n) {
-          val elements = buf.result()
+        // Since the upstream has finished we have to push any buffered elements downstream.
+        val elements = buf.result()
+        if (elements.nonEmpty) {
           buf.clear()
-          left = n
+          left = minWeight
           push(out, elements)
         }
         completeStage()
@@ -817,7 +821,7 @@ private[stream] object Collect {
  */
 @InternalApi private[akka] final case class LimitWeighted[T](val n: Long, val costFn: T => Long)
     extends SimpleLinearGraphStage[T] {
-  override def initialAttributes: Attributes = DefaultAttributes.limitWeighted
+  override def initialAttributes: Attributes = DefaultAttributes.limitWeighted and SourceLocation.forLambda(costFn)
 
   def createLogic(inheritedAttributes: Attributes) =
     new SupervisedGraphStageLogic(inheritedAttributes, shape) with InHandler with OutHandler {
@@ -1162,7 +1166,7 @@ private[stream] object Collect {
   private val in = Inlet[In]("expand.in")
   private val out = Outlet[Out]("expand.out")
 
-  override def initialAttributes = DefaultAttributes.expand
+  override def initialAttributes = DefaultAttributes.expand and SourceLocation.forLambda(extrapolate)
 
   override val shape = FlowShape(in, out)
 
@@ -1254,7 +1258,7 @@ private[stream] object Collect {
   private val in = Inlet[In]("MapAsync.in")
   private val out = Outlet[Out]("MapAsync.out")
 
-  override def initialAttributes = DefaultAttributes.mapAsync
+  override def initialAttributes = DefaultAttributes.mapAsync and SourceLocation.forLambda(f)
 
   override val shape = FlowShape(in, out)
 
@@ -1354,7 +1358,7 @@ private[stream] object Collect {
   private val in = Inlet[In]("MapAsyncUnordered.in")
   private val out = Outlet[Out]("MapAsyncUnordered.out")
 
-  override def initialAttributes = DefaultAttributes.mapAsyncUnordered
+  override def initialAttributes = DefaultAttributes.mapAsyncUnordered and SourceLocation.forLambda(f)
 
   override val shape = FlowShape(in, out)
 
@@ -1710,16 +1714,18 @@ private[stream] object Collect {
  */
 @InternalApi private[akka] final class GroupedWeightedWithin[T](
     val maxWeight: Long,
-    costFn: T => Long,
+    val maxNumber: Int,
+    val costFn: T => Long,
     val interval: FiniteDuration)
     extends GraphStage[FlowShape[T, immutable.Seq[T]]] {
   require(maxWeight > 0, "maxWeight must be greater than 0")
+  require(maxNumber > 0, "maxNumber must be greater than 0")
   require(interval > Duration.Zero)
 
   val in = Inlet[T]("in")
   val out = Outlet[immutable.Seq[T]]("out")
 
-  override def initialAttributes = DefaultAttributes.groupedWeightedWithin
+  override def initialAttributes = DefaultAttributes.groupedWeightedWithin and SourceLocation.forLambda(costFn)
 
   val shape = FlowShape(in, out)
 
@@ -1743,6 +1749,7 @@ private[stream] object Collect {
       private var groupEmitted = true
       private var finished = false
       private var totalWeight = 0L
+      private var totalNumber = 0
       private var hasElements = false
 
       override def preStart() = {
@@ -1757,15 +1764,17 @@ private[stream] object Collect {
           failStage(new IllegalArgumentException(s"Negative weight [$cost] for element [$elem] is not allowed"))
         else {
           hasElements = true
-          if (totalWeight + cost <= maxWeight) {
+          // if there is place (both weight and number) for `elem` in the current group
+          if (totalWeight + cost <= maxWeight && totalNumber + 1 <= maxNumber) {
             buf += elem
             totalWeight += cost
+            totalNumber += 1;
 
-            if (totalWeight < maxWeight) pull(in)
+            // if potentially there is a place (both weight and number) for one more element in the current group
+            if (totalWeight < maxWeight && totalNumber < maxNumber) pull(in)
             else {
-              // `totalWeight >= maxWeight` which means that downstream can get the next group.
               if (!isAvailable(out)) {
-                // We should emit group when downstream becomes available
+                // we should emit group when downstream becomes available
                 pushEagerly = true
                 // we want to pull anyway, since we allow for zero weight elements
                 // but since `emitGroup()` will pull internally (by calling `startNewGroup()`)
@@ -1777,10 +1786,11 @@ private[stream] object Collect {
               }
             }
           } else {
-            //we have a single heavy element that weighs more than the limit
-            if (totalWeight == 0L) {
+            // if there is a single heavy element that weighs more than the limit
+            if (totalWeight == 0L && totalNumber == 0) {
               buf += elem
               totalWeight += cost
+              totalNumber += 1;
               pushEagerly = true
             } else {
               pending = elem
@@ -1809,12 +1819,14 @@ private[stream] object Collect {
       private def startNewGroup(): Unit = {
         if (pending != null) {
           totalWeight = pendingWeight
+          totalNumber = 1
           pendingWeight = 0L
           buf += pending
           pending = null.asInstanceOf[T]
           groupEmitted = false
         } else {
           totalWeight = 0L
+          totalNumber = 0
           hasElements = false
         }
         pushEagerly = false
@@ -2039,7 +2051,7 @@ private[stream] object Collect {
  * INTERNAL API
  */
 @InternalApi private[akka] final class Reduce[T](val f: (T, T) => T) extends SimpleLinearGraphStage[T] {
-  override def initialAttributes: Attributes = DefaultAttributes.reduce
+  override def initialAttributes: Attributes = DefaultAttributes.reduce and SourceLocation.forLambda(f)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler { self =>
@@ -2064,7 +2076,7 @@ private[stream] object Collect {
         })
       }
 
-      @silent // compiler complaining about aggregator = _: T
+      @nowarn // compiler complaining about aggregator = _: T
       override def onPush(): Unit = {
         val elem = grab(in)
         try {
@@ -2159,13 +2171,15 @@ private[stream] object Collect {
 /**
  * INTERNAL API
  */
-@InternalApi private[akka] final class StatefulMapConcat[In, Out](val f: () => In => immutable.Iterable[Out])
+@InternalApi
+@ccompatUsedUntil213
+private[akka] final class StatefulMapConcat[In, Out](val f: () => In => IterableOnce[Out])
     extends GraphStage[FlowShape[In, Out]] {
   val in = Inlet[In]("StatefulMapConcat.in")
   val out = Outlet[Out]("StatefulMapConcat.out")
   override val shape = FlowShape(in, out)
 
-  override def initialAttributes: Attributes = DefaultAttributes.statefulMapConcat
+  override def initialAttributes: Attributes = DefaultAttributes.statefulMapConcat and SourceLocation.forLambda(f)
 
   def createLogic(inheritedAttributes: Attributes) = new GraphStageLogic(shape) with InHandler with OutHandler {
     lazy val decider = inheritedAttributes.mandatoryAttribute[SupervisionStrategy].decider

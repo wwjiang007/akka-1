@@ -169,6 +169,33 @@ akka-cluster/scalafmtAll
 akka-persistence/scalafmtAll
 ```
 
+To format the Java source code:
+```
+sbt
+project akka-actor
+javafmtAll
+```
+
+To keep the *import*s sorted with:
+
+```
+sbt
+project akka-actor
+sortImports
+```
+
+To verify code style with:
+```
+sbt 
+verifyCodeStyle
+```
+
+To apply code style with:
+```
+sbt
+applyCodeStyle
+```
+
 ### Do not use `-optimize` Scala compiler flag
 
 Akka has not been compiled or tested with `-optimize` Scala compiler flag. (In sbt, you can specify compiler options in the `scalacOptions` key.)
@@ -288,7 +315,7 @@ For a pull request to be considered at all it has to meet these requirements:
 Some additional guidelines regarding source code are:
 
 - Keep the code [DRY](http://programmer.97things.oreilly.com/wiki/index.php/Don%27t_Repeat_Yourself).
-- Apply the [Boy Scout Rule](http://programmer.97things.oreilly.com/wiki/index.php/The_Boy_Scout_Rule) whenever you have the chance to.
+- Apply the [Boy Scout Rule](https://www.oreilly.com/library/view/97-things-every/9780596809515/ch08.html) whenever you have the chance to.
 - Never delete or change existing copyright notices, just add additional info.
 - Do not use ``@author`` tags since it does not encourage [Collective Code Ownership](http://www.extremeprogramming.org/rules/collective.html).
   - Contributors , each project should make sure that the contributors gets the credit they deserve—in a text file or page on the project website and in the release notes etc.
@@ -429,6 +456,8 @@ IntelliJ will then use the same settings and version as defined in `.scalafmt.co
 not needed to use `sbt scalafmtAll` when editing with IntelliJ.
 
 PR validation includes checking that the Scala sources are formatted and will fail if they are not.
+
+It's recommended to run `sbt +sortImports` to keep the *import*s sorted.
 
 ### Java style
 
@@ -574,7 +603,7 @@ Akka currently uses a combination of Jenkins and Travis for Continuous Integrati
 
 * Jenkins [runs the tests for each PR](https://jenkins.akka.io:8498/job/pr-validator-per-commit-jenkins/)
 * Jenkins [runs a nightly test suite](https://jenkins.akka.io:8498/view/Nightly%20Jobs/job/akka-nightly/)
-* Travis [checks dependency licenses for all PR's](https://travis-ci.org/akka/akka)
+* Travis [checks dependency licenses for all PR's](https://travis-ci.com/github/akka/akka)
 
 The [Jenkins server farm](https://jenkins.akka.io/), sometimes referred to as "the Lausanne cluster", is sponsored by Lightbend.
 

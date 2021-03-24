@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2015-2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.stream.javadsl
@@ -13,7 +13,7 @@ import scala.compat.java8.FutureConverters._
 import scala.concurrent.duration.FiniteDuration
 import scala.reflect.ClassTag
 
-import com.github.ghik.silencer.silent
+import scala.annotation.nowarn
 
 import akka.NotUsed
 import akka.event.{ LogMarker, LoggingAdapter, MarkerLoggingAdapter }
@@ -372,6 +372,26 @@ class SubSource[Out, Mat](
     new SubSource(delegate.grouped(n).map(_.asJava)) // TODO optimize to one step
 
   /**
+   * Chunk up this stream into groups of elements that have a cumulative weight greater than or equal to
+   * the `minWeight`, with the last group possibly smaller than requested `minWeight` due to end-of-stream.
+   *
+   * `minWeight` must be positive, otherwise IllegalArgumentException is thrown.
+   * `costFn` must return a non-negative result for all inputs, otherwise the stage will fail
+   * with an IllegalArgumentException.
+   *
+   * '''Emits when''' the cumulative weight of elements is greater than or equal to the `minWeight` or upstream completed
+   *
+   * '''Backpressures when''' a buffered group weighs more than `minWeight` and downstream backpressures
+   *
+   * '''Completes when''' upstream completes
+   *
+   * '''Cancels when''' downstream cancels
+   */
+  def groupedWeighted(minWeight: Long)(
+      costFn: function.Function[Out, java.lang.Long]): SubSource[java.util.List[Out @uncheckedVariance], Mat] =
+    new SubSource(delegate.groupedWeighted(minWeight)(costFn.apply).map(_.asJava)) // TODO optimize to one step
+
+  /**
    * Apply a sliding window over the stream and return the windows as groups of elements, with the last group
    * possibly smaller than requested due to end-of-stream.
    *
@@ -666,7 +686,7 @@ class SubSource[Out, Mat](
    * `n` must be positive, and `d` must be greater than 0 seconds, otherwise
    * IllegalArgumentException is thrown.
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def groupedWithin(n: Int, d: java.time.Duration): SubSource[java.util.List[Out @uncheckedVariance], Mat] =
     groupedWithin(n, d.asScala)
 
@@ -714,12 +734,38 @@ class SubSource[Out, Mat](
    * `maxWeight` must be positive, and `d` must be greater than 0 seconds, otherwise
    * IllegalArgumentException is thrown.
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def groupedWeightedWithin(
       maxWeight: Long,
       costFn: function.Function[Out, java.lang.Long],
       d: java.time.Duration): javadsl.SubSource[java.util.List[Out @uncheckedVariance], Mat] =
     groupedWeightedWithin(maxWeight, costFn, d.asScala)
+
+  /**
+   * Chunk up this stream into groups of elements received within a time window,
+   * or limited by the weight and number of the elements, whatever happens first.
+   * Empty groups will not be emitted if no elements are received from upstream.
+   * The last group before end-of-stream will contain the buffered elements
+   * since the previously emitted group.
+   *
+   * '''Emits when''' the configured time elapses since the last group has been emitted or weight limit reached
+   *
+   * '''Backpressures when''' downstream backpressures, and buffered group (+ pending element) weighs more than
+   * `maxWeight` or has more than `maxNumber` elements
+   *
+   * '''Completes when''' upstream completes (emits last group)
+   *
+   * '''Cancels when''' downstream completes
+   *
+   * `maxWeight` must be positive, `maxNumber` must be positive, and `d` must be greater than 0 seconds,
+   * otherwise IllegalArgumentException is thrown.
+   */
+  def groupedWeightedWithin(
+      maxWeight: Long,
+      maxNumber: Int,
+      costFn: function.Function[Out, java.lang.Long],
+      d: java.time.Duration): javadsl.SubSource[java.util.List[Out @uncheckedVariance], Mat] =
+    new SubSource(delegate.groupedWeightedWithin(maxWeight, maxNumber, d.asScala)(costFn.apply).map(_.asJava))
 
   /**
    * Discard the given number of elements at the beginning of the stream.
@@ -763,7 +809,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def dropWithin(d: java.time.Duration): SubSource[Out, Mat] =
     dropWithin(d.asScala)
 
@@ -880,7 +926,7 @@ class SubSource[Out, Mat](
    * @param of time to shift all messages
    * @param strategy Strategy that is used when incoming elements cannot fit inside the buffer
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def delay(of: java.time.Duration, strategy: DelayOverflowStrategy): SubSource[Out, Mat] =
     delay(of.asScala, strategy)
 
@@ -1090,7 +1136,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels or timer fires
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def takeWithin(d: java.time.Duration): SubSource[Out, Mat] =
     takeWithin(d.asScala)
 
@@ -1766,7 +1812,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def initialTimeout(timeout: java.time.Duration): SubSource[Out, Mat] =
     initialTimeout(timeout.asScala)
 
@@ -1799,7 +1845,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def completionTimeout(timeout: java.time.Duration): SubSource[Out, Mat] =
     completionTimeout(timeout.asScala)
 
@@ -1834,7 +1880,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def idleTimeout(timeout: java.time.Duration): SubSource[Out, Mat] =
     idleTimeout(timeout.asScala)
 
@@ -1869,7 +1915,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def backpressureTimeout(timeout: java.time.Duration): SubSource[Out, Mat] =
     backpressureTimeout(timeout.asScala)
 
@@ -1912,7 +1958,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def keepAlive(maxIdle: java.time.Duration, injectedElem: function.Creator[Out]): SubSource[Out, Mat] =
     keepAlive(maxIdle.asScala, injectedElem)
 
@@ -2276,7 +2322,7 @@ class SubSource[Out, Mat](
    *
    * '''Cancels when''' downstream cancels
    */
-  @silent("deprecated")
+  @nowarn("msg=deprecated")
   def initialDelay(delay: java.time.Duration): SubSource[Out, Mat] =
     initialDelay(delay.asScala)
 
