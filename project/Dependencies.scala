@@ -14,7 +14,7 @@ object Dependencies {
 
   lazy val java8CompatVersion = settingKey[String]("The version of scala-java8-compat to use.")
 
-  val junitVersion = "4.13.1"
+  val junitVersion = "4.13.2"
   val slf4jVersion = "1.7.30"
   // check agrona version when updating this
   val aeronVersion = "1.32.0"
@@ -28,7 +28,7 @@ object Dependencies {
   val jacksonVersion = "2.11.4"
 
   val scala212Version = "2.12.13"
-  val scala213Version = "2.13.3"
+  val scala213Version = "2.13.5"
   val scala3Version = "3.0.0-RC1"
 
   val reactiveStreamsVersion = "1.0.3"
@@ -57,7 +57,7 @@ object Dependencies {
       case twoThirteen if twoThirteen.startsWith("2.13") => scala213Version
       case twoTwelve if twoTwelve.startsWith("2.12")     => scala212Version
       case three if three.startsWith("3.0")              => scala3Version
-      case "default"                                     => scala212Version
+      case "default"                                     => scala213Version
       case other =>
         throw new IllegalArgumentException(s"Unsupported scala version [$other]. Must be 2.12, 2.13 or 3.0.")
     }
